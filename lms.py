@@ -328,39 +328,45 @@ def generate_student_id(degree_program):
     try:
         cursor = conn.cursor()
 
-        # Define degree program abbreviations
+        # Degree mapping
         degree_map = {
             "BS Computer Science": "CS",
             "BS Software Engineering": "SE",
             "BS Data Science": "DS"
         }
 
-        prefix = degree_map.get(degree_program, "XX")  # Fallback to "XX" if unknown
+        prefix = degree_map.get(degree_program, "XX")
 
-        # Query the highest student ID for the degree prefix
+        # SQLite query (LIMIT instead of TOP)
         cursor.execute("""
-            SELECT TOP 1 student_id 
+            SELECT student_id 
             FROM students 
-            WHERE student_id LIKE ? 
-            ORDER BY student_id DESC
+            WHERE student_id LIKE ?
+            ORDER BY id DESC
+            LIMIT 1
         """, (prefix + "%",))
+
         result = cursor.fetchone()
 
         if result:
-            last_id = result[0]
-            numeric_part = int(last_id[len(prefix):])
-            new_number = numeric_part + 1
+            last_id = result[0]  # e.g. CS005
+
+            try:
+                number = int(last_id[len(prefix):])
+                new_number = number + 1
+            except:
+                new_number = 1
         else:
             new_number = 1
 
-        new_id = f"{prefix}{str(new_number).zfill(3)}"  # e.g., CS001
-        return new_id
+        return f"{prefix}{str(new_number).zfill(3)}"
+
     except Exception as e:
         st.error(f"Error generating student ID: {e}")
         return None
+
     finally:
         conn.close()
-
 def generate_teacher_id():
     conn = connect_db()
     if not conn:
