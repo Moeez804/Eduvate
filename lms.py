@@ -591,7 +591,9 @@ def get_teachers():
         return []
 
     finally:
-        conn.close()def update_teacher(teacher_id, name=None, email=None):
+        conn.close()
+        
+def update_teacher(teacher_id, name=None, email=None):
     conn = connect_db()
     if not conn:
         return False
