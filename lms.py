@@ -365,30 +365,38 @@ def generate_teacher_id():
     conn = connect_db()
     if not conn:
         return None
-    
+
     try:
         cursor = conn.cursor()
-        
-        # Get the latest teacher ID
-        cursor.execute("SELECT TOP 1 teacher_id FROM teachers ORDER BY teacher_id DESC")
+
+        # SQLite version (LIMIT instead of TOP)
+        cursor.execute("""
+            SELECT teacher_id 
+            FROM teachers 
+            ORDER BY id DESC 
+            LIMIT 1
+        """)
         result = cursor.fetchone()
-        
+
         if result:
-            # Extract the numeric part and increment it
-            last_id = result[0]
-            numeric_part = int(last_id[1:])  # Remove 'T' and convert the number part
-            new_id = 'T' + str(numeric_part + 1).zfill(3)  # Increment and pad with leading zeros
+            last_id = result[0]   # e.g. T005
+
+            try:
+                number = int(last_id[1:])  # remove 'T'
+                new_id = f"T{str(number + 1).zfill(3)}"
+            except:
+                new_id = "T001"
         else:
-            # If no teachers exist, start with T001
-            new_id = 'T001'
-        
+            new_id = "T001"
+
         return new_id
+
     except Exception as e:
         st.error(f"Error generating teacher ID: {e}")
-        return None
+        return "T001"
+
     finally:
         conn.close()
-
 
 def parse_schedule_days(schedule):
     """Extract weekdays from schedule string (e.g., 'Mon/Wed 9-10:30' -> [0, 2])"""
