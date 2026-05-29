@@ -7,12 +7,13 @@ from PIL import Image
 import io
 import pandas as pd
 from datetime import datetime, timedelta
-from pyodbc import Error
 from st_aggrid import AgGrid
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from io import BytesIO
 import textwrap
+import zipfile
+
 # ===== CONFIGURATION =====
 PRESET_ADMIN = {
     "username": "admin",
@@ -26,13 +27,14 @@ DEGREE_PROGRAMS = [
 ]
 
 def show_success(message):
-        st.markdown(f'<div class="success-message">{message}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="success-message">{message}</div>', unsafe_allow_html=True)
 
 def show_error(message):
-        st.markdown(f'<div class="error-message">{message}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="error-message">{message}</div>', unsafe_allow_html=True)
 
 def show_warning(message):
-        st.markdown(f'<div class="warning-message">{message}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="warning-message">{message}</div>', unsafe_allow_html=True)
+
 # Add to the top of your code (after imports)
 def set_custom_style():
     st.markdown("""
@@ -115,6 +117,7 @@ def set_custom_style():
         }
     </style>
     """, unsafe_allow_html=True)
+
 # ===== DATABASE FUNCTIONS =====
 def connect_db():
     try:
@@ -123,6 +126,7 @@ def connect_db():
     except Exception as e:
         st.error(f"Database connection failed: {e}")
         return None
+
 def init_db():
     conn = connect_db()
     if not conn:
@@ -316,6 +320,7 @@ def init_db():
 
     finally:
         conn.close()
+
 # ===== UTILITY FUNCTIONS =====
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -344,7 +349,7 @@ def generate_student_id(degree_program):
             WHERE student_id LIKE ?
             ORDER BY id DESC
             LIMIT 1
-        """, (prefix + "%",))
+        """, (prefix + '%',))
 
         result = cursor.fetchone()
 
@@ -367,6 +372,7 @@ def generate_student_id(degree_program):
 
     finally:
         conn.close()
+
 def generate_teacher_id():
     conn = connect_db()
     if not conn:
@@ -505,7 +511,6 @@ def student_login(student_id, password):
     finally:
         conn.close()
 
-
 def update_password(table, id_field, id_value, new_password):
     conn = connect_db()
     if not conn:
@@ -545,7 +550,7 @@ def add_teacher(name, email):
         conn.commit()
         return teacher_id
     except Exception as e:
-        if "Violation of UNIQUE KEY constraint" in str(e):
+        if "UNIQUE constraint failed" in str(e):
             st.error("Teacher with this email already exists")
         else:
             st.error(f"🔴 Teacher Addition Failed: {e}")
@@ -636,6 +641,7 @@ def update_teacher(teacher_id, name=None, email=None):
         return False
     finally:
         conn.close()
+
 def add_student(cnic, name, age, degree, fee, father, image=None):
     conn = connect_db()
     if not conn:
@@ -669,14 +675,13 @@ def add_student(cnic, name, age, degree, fee, father, image=None):
         conn.commit()
         return student_id  # Return student_id instead of username
     except Exception as e:
-        if "Violation of UNIQUE KEY constraint" in str(e):
+        if "UNIQUE constraint failed" in str(e):
             st.error("Student with this CNIC or student ID already exists")
         else:
             st.error(f"🔴 Student Addition Failed: {e}")
         return None
     finally:
         conn.close()
-
 
 def remove_student(cnic):
     conn = connect_db()
@@ -748,6 +753,7 @@ def update_student(cnic, name=None, age=None, degree=None, fee=None, father=None
         return False
     finally:
         conn.close()
+
 def get_students():
     conn = connect_db()
     if not conn:
@@ -786,6 +792,7 @@ def get_students():
 
     finally:
         conn.close()
+
 def validate_cnic(cnic):
     """
     Validates a CNIC number:
@@ -798,6 +805,7 @@ def validate_cnic(cnic):
     if len(cnic) != 13:
         return False
     return True
+
 def add_class(course_code, course_name, schedule, instructor_id, degree):
     conn = connect_db()
     if not conn:
@@ -843,6 +851,7 @@ def get_classes():
         return []
     finally:
         conn.close()
+
 def update_class(class_id, course_code=None, course_name=None, schedule=None, instructor_id=None, degree_program=None):
     conn = connect_db()
     if not conn:
@@ -889,15 +898,23 @@ def update_class(class_id, course_code=None, course_name=None, schedule=None, in
         return False
     finally:
         conn.close()
+
 def remove_class(class_id):
     """Remove class from database"""
     try:
-        # Your database removal logic here
-        # Handle any foreign key constraints
-        return True  # if successful
+        conn = connect_db()
+        if not conn:
+            return False
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM classes WHERE id = ?", (class_id,))
+        conn.commit()
+        return True
     except Exception as e:
         st.error(f"Error removing class: {e}")
         return False
+    finally:
+        conn.close()
+
 # ===== TEACHER FUNCTIONS =====
 def mark_attendance(class_id, student_cnic, date, status):
     conn = connect_db()
@@ -1139,6 +1156,7 @@ def get_class_exams(class_id):
         return []
     finally:
         conn.close()
+
 def generate_invoice_pdf(invoice_data, student_data):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
@@ -1207,6 +1225,7 @@ def generate_invoice_pdf(invoice_data, student_data):
     c.save()
     buffer.seek(0)
     return buffer
+
 def submit_assignment_grade(assignment_id, student_cnic, obtained_marks, feedback, graded_by):
     conn = connect_db()
     if not conn:
@@ -1281,6 +1300,7 @@ def submit_exam_grade(exam_id, student_cnic, obtained_marks, graded_by):
         return False
     finally:
         conn.close()
+
 def get_assignment_grade(assignment_id, student_cnic):
     conn = connect_db()
     if not conn:
@@ -1306,6 +1326,7 @@ def get_assignment_grade(assignment_id, student_cnic):
         return None
     finally:
         conn.close()
+
 def get_student_assignment_grades(student_cnic, class_id=None):
     conn = connect_db()
     if not conn:
@@ -1316,7 +1337,7 @@ def get_student_assignment_grades(student_cnic, class_id=None):
         if class_id:
             cursor.execute("""
                 SELECT a.id, a.title, a.total_marks, ag.obtained_marks, 
-                       ag.feedback, c.course_code, c.course_name, CAST(a.due_date AS DATE) as due_date
+                       ag.feedback, c.course_code, c.course_name, DATE(a.due_date) as due_date
                 FROM assignments a
                 LEFT JOIN assignment_grades ag ON a.id = ag.assignment_id AND ag.student_cnic = ?
                 JOIN classes c ON a.class_id = c.id
@@ -1326,7 +1347,7 @@ def get_student_assignment_grades(student_cnic, class_id=None):
         else:
             cursor.execute("""
                 SELECT a.id, a.title, a.total_marks, ag.obtained_marks, 
-                       ag.feedback, c.course_code, c.course_name, CAST(a.due_date AS DATE) as due_date
+                       ag.feedback, c.course_code, c.course_name, DATE(a.due_date) as due_date
                 FROM assignments a
                 LEFT JOIN assignment_grades ag ON a.id = ag.assignment_id AND ag.student_cnic = ?
                 JOIN classes c ON a.class_id = c.id
@@ -1682,13 +1703,14 @@ def get_overdue_invoices():
     
     try:
         cursor = conn.cursor()
+        # SQLite version using DATE() function
         cursor.execute("""
             SELECT i.id, s.full_name, s.cnic, i.amount, i.due_date,
                    (i.amount - COALESCE(SUM(p.amount), 0)) as remaining
             FROM invoices i
             JOIN students s ON i.student_cnic = s.cnic
             LEFT JOIN payments p ON p.invoice_id = i.id
-            WHERE i.due_date < CAST(GETDATE() AS DATE) AND i.status = 'Unpaid'
+            WHERE DATE(i.due_date) < DATE('now') AND i.status = 'Unpaid'
             GROUP BY i.id, s.full_name, s.cnic, i.amount, i.due_date
             HAVING i.amount > COALESCE(SUM(p.amount), 0)
             ORDER BY i.due_date
@@ -1704,6 +1726,7 @@ def get_overdue_invoices():
         return []
     finally:
         conn.close()
+
 def update_invoice(invoice_id, amount=None, due_date=None):
     conn = connect_db()
     if not conn:
@@ -1805,6 +1828,7 @@ def get_student_assignment_submission(assignment_id, student_cnic):
         return None
     finally:
         conn.close()
+
 def get_assignment_submissions(assignment_id):
     conn = connect_db()
     if not conn:
@@ -1857,6 +1881,7 @@ def get_submission_file(submission_id):
         return None
     finally:
         conn.close()
+
 # ===== STREAMLIT UI =====
 def render_teacher_dashboard():
     teacher = st.session_state.auth['user_data']
@@ -2010,10 +2035,17 @@ def render_teacher_dashboard():
                     assignments.append(a)
             
             if assignments:
-                upcoming = [a for a in assignments if a['due_date'].date() > datetime.now().date()]
+                # Parse due dates
+                upcoming = []
+                for a in assignments:
+                    due_date = pd.to_datetime(a['due_date']).date() if isinstance(a['due_date'], str) else a['due_date']
+                    if due_date > datetime.now().date():
+                        upcoming.append(a)
+                
                 if upcoming:
-                    for assign in sorted(upcoming, key=lambda x: x['due_date'])[:3]:
-                        days_left = (assign['due_date'] - datetime.now().date()).days
+                    for assign in sorted(upcoming, key=lambda x: pd.to_datetime(x['due_date']))[:3]:
+                        due_date = pd.to_datetime(assign['due_date']).date()
+                        days_left = (due_date - datetime.now().date()).days
                         
                         st.markdown(f"""
                         <div class="assignment-card">
@@ -2022,7 +2054,7 @@ def render_teacher_dashboard():
                                 <span>{assign['course_code']}</span>
                             </div>
                             <p style="margin: 0.5rem 0 0; font-size: 0.9rem;">
-                                Due in {days_left} days • {assign['due_date']}
+                                Due in {days_left} days • {due_date}
                             </p>
                         </div>
                         """, unsafe_allow_html=True)
@@ -2038,11 +2070,14 @@ def render_teacher_dashboard():
             </div>
             """, unsafe_allow_html=True)
             
+            total_students = 0
+            for c in classes:
+                total_students += len(get_class_students(c['id']))
+            
             st.markdown(f"""
             <div class="metric-card">
                 <h4>👨‍🎓 Total Students</h4>
-               <h2>{sum(len(get_class_students(c['id'])) for c in classes)}</h2>
-
+                <h2>{total_students}</h2>
             </div>
             """, unsafe_allow_html=True)
             
@@ -2111,8 +2146,9 @@ def render_teacher_dashboard():
                     try:
                         cursor = conn.cursor()
                         cursor.execute("""
-                            SELECT TOP 1 1 FROM attendance 
+                            SELECT 1 FROM attendance 
                             WHERE class_id = ? AND date = ?
+                            LIMIT 1
                         """, (class_id, attendance_date))
                         if cursor.fetchone():
                             st.warning("Attendance already marked for this date")
@@ -2520,7 +2556,7 @@ def render_teacher_dashboard():
                         st.session_state.auth['user_data']['must_change_pass'] = False
                     else:
                         st.error("Failed to update password")
-                    
+
 def render_student_dashboard():
     # Custom CSS styling
     st.markdown("""
@@ -2600,80 +2636,6 @@ def render_student_dashboard():
         }
     </style>
     """, unsafe_allow_html=True)
-
-    def generate_invoice_pdf(invoice_data, student_data):
-        from reportlab.lib.pagesizes import letter
-        from reportlab.pdfgen import canvas
-        from io import BytesIO
-        import textwrap
-        
-        buffer = BytesIO()
-        c = canvas.Canvas(buffer, pagesize=letter)
-        width, height = letter
-        
-        # Set up styles
-        c.setFont("Helvetica-Bold", 16)
-        
-        # Header
-        c.drawString(100, height - 100, "EDUVATE UNIVERSITY")
-        c.setFont("Helvetica", 12)
-        c.drawString(100, height - 120, "123 Education Street, Learning City")
-        c.drawString(100, height - 140, "Phone: (123) 456-7890 | Email: info@eduvate.edu")
-        
-        # Invoice title
-        c.setFont("Helvetica-Bold", 20)
-        c.drawCentredString(width/2, height - 180, "FEE INVOICE")
-        
-        # Invoice details
-        c.setFont("Helvetica", 12)
-        c.drawString(100, height - 220, f"Invoice #: {invoice_data['id']}")
-        c.drawString(100, height - 240, f"Date Issued: {invoice_data['issue_date']}")
-        c.drawString(100, height - 260, f"Due Date: {invoice_data['due_date']}")
-        
-        # Student info
-        c.drawString(350, height - 220, f"Student ID: {student_data['student_id']}")
-        c.drawString(350, height - 240, f"Student Name: {student_data['full_name']}")
-        c.drawString(350, height - 260, f"Degree Program: {student_data['degree']}")
-        
-        # Line separator
-        c.line(100, height - 280, width - 100, height - 280)
-        
-        # Invoice items
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(100, height - 310, "Description")
-        c.drawString(400, height - 310, "Amount")
-        
-        c.setFont("Helvetica", 12)
-        c.drawString(100, height - 340, f"Tuition Fee for {student_data['degree']}")
-        c.drawString(400, height - 340, f"Rs. {invoice_data['amount']:,.2f}")
-        
-        # Total
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(400, height - 380, f"Total: Rs. {invoice_data['amount']:,.2f}")
-        
-        # Payment status
-        status_y = height - 420
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(100, status_y, "Payment Status:")
-        c.setFont("Helvetica", 12)
-        if invoice_data['status'] == "Paid":
-            c.drawString(200, status_y, "PAID")
-        else:
-            c.drawString(200, status_y, "PENDING")
-        
-        # Footer
-        c.setFont("Helvetica", 10)
-        footer_text = "Please make payments by the due date to avoid late fees. Payments can be made at the university cashier or through bank transfer to Account #123456789."
-        for i, line in enumerate(textwrap.wrap(footer_text, width=100)):
-            c.drawString(100, height - 470 - (i * 15), line)
-        
-        # University stamp
-        c.setFont("Helvetica-Oblique", 10)
-        c.drawCentredString(width/2, 100, "Official Invoice - Eduvate University")
-        
-        c.save()
-        buffer.seek(0)
-        return buffer
 
     student = st.session_state.auth['user_data']
     
@@ -2774,10 +2736,16 @@ def render_student_dashboard():
             
             assignments = get_student_assignment_grades(student['cnic'])
             if assignments:
-                upcoming = [a for a in assignments if a['due_date'] > datetime.now().date()]
+                upcoming = []
+                for a in assignments:
+                    due_date = pd.to_datetime(a['due_date']).date() if isinstance(a['due_date'], str) else a['due_date']
+                    if due_date > datetime.now().date():
+                        upcoming.append(a)
+                
                 if upcoming:
-                    for assign in sorted(upcoming, key=lambda x: x['due_date'])[:3]:
-                        days_left = (assign['due_date'] - datetime.now().date()).days
+                    for assign in sorted(upcoming, key=lambda x: pd.to_datetime(x['due_date']))[:3]:
+                        due_date = pd.to_datetime(assign['due_date']).date()
+                        days_left = (due_date - datetime.now().date()).days
                         status = "✅ Submitted" if assign['obtained_marks'] is not None else "⚠️ Pending"
                         
                         st.markdown(f"""
@@ -2836,7 +2804,9 @@ def render_student_dashboard():
                 st.metric("💸 Unpaid Fees", f"Rs. {unpaid:,.2f}")
                 
                 # Check for overdue invoices
-                overdue = [i for i in invoices if i['due_date'] < datetime.now().date() and i['status'] == "Unpaid"]
+                overdue = [i for i in invoices if 
+                          (pd.to_datetime(i['due_date']).date() if isinstance(i['due_date'], str) else i['due_date']) < datetime.now().date() 
+                          and i['status'] == "Unpaid"]
                 if overdue:
                     st.error(f"You have {len(overdue)} overdue invoice(s)")
             else:
@@ -2928,7 +2898,7 @@ def render_student_dashboard():
                                     df = pd.DataFrame([{
                                         'Assignment': a['title'],
                                         'Total Marks': a['total_marks'],
-                                        'Obtained': a['obtained_marks'],
+                                        'Obtained': a['obtained_marks'] if a['obtained_marks'] else 0,
                                         'Percentage': (a['obtained_marks'] / a['total_marks']) * 100 if a['obtained_marks'] and a['total_marks'] else 0,
                                         'Feedback': a['feedback']
                                     } for a in assignments])
@@ -2952,7 +2922,7 @@ def render_student_dashboard():
                                     df = pd.DataFrame([{
                                         'Exam': f"{e['exam_type']} - {e['title']}",
                                         'Total Marks': e['total_marks'],
-                                        'Obtained': e['obtained_marks'],
+                                        'Obtained': e['obtained_marks'] if e['obtained_marks'] else 0,
                                         'Percentage': (e['obtained_marks'] / e['total_marks']) * 100 if e['obtained_marks'] and e['total_marks'] else 0,
                                         'Weightage': f"{e['weightage']}%"
                                     } for e in exams])
@@ -3006,7 +2976,8 @@ def render_student_dashboard():
                         st.write(f"**Total Marks:** {assignment['total_marks']}")
                         
                         # Check if assignment is past due
-                        is_past_due = datetime.now().date() > assignment['due_date']
+                        due_date = pd.to_datetime(assignment['due_date']).date() if isinstance(assignment['due_date'], str) else assignment['due_date']
+                        is_past_due = datetime.now().date() > due_date
                         
                         # Get existing submission if any
                         submission = get_student_assignment_submission(
@@ -3107,7 +3078,7 @@ def render_student_dashboard():
                         'Exam': f"{e['exam_type']} - {e['title']}",
                         'Date': e['exam_date'],
                         'Total Marks': e['total_marks'],
-                        'Obtained': e['obtained_marks'],
+                        'Obtained': e['obtained_marks'] if e['obtained_marks'] else 0,
                         'Percentage': (e['obtained_marks'] / e['total_marks']) * 100 if e['obtained_marks'] and e['total_marks'] else 0,
                         'Weightage': f"{e['weightage']}%"
                     } for e in exms])
@@ -3157,7 +3128,8 @@ def render_student_dashboard():
                         </div>
                         """, unsafe_allow_html=True)
                     else:
-                        days_left = (invoice['due_date'] - datetime.now().date()).days
+                        due_date = pd.to_datetime(invoice['due_date']).date() if isinstance(invoice['due_date'], str) else invoice['due_date']
+                        days_left = (due_date - datetime.now().date()).days
                         if days_left < 0:
                             st.markdown(f"""
                             <div class="error-message">
@@ -3245,6 +3217,7 @@ def render_student_dashboard():
                                 ❌ Failed to update password
                             </div>
                             """, unsafe_allow_html=True)
+
 def render_admin_dashboard():
     # Custom CSS styling
     st.markdown("""
@@ -3895,7 +3868,7 @@ def render_admin_dashboard():
                                 "Instructor",
                                 [(t['teacher_id'], t['full_name']) for t in teachers],
                                 format_func=lambda x: f"{x[0]} - {x[1]}",
-                                index=[i for i, t in enumerate(teachers) if t['full_name'] == class_data['instructor']][0]
+                                index=[i for i, t in enumerate(teachers) if t['full_name'] == class_data['instructor']][0] if teachers else 0
                             )
                             new_degree = st.selectbox(
                                 "Degree Program", 
@@ -4210,7 +4183,7 @@ def render_admin_dashboard():
                                 with col2:
                                     new_due_date = st.date_input(
                                         "Due Date",
-                                        value=invoice_data['due_date']
+                                        value=pd.to_datetime(invoice_data['due_date']).date() if isinstance(invoice_data['due_date'], str) else invoice_data['due_date']
                                     )
                                 
                                 submitted = st.form_submit_button("💾 Update Invoice", use_container_width=True)
@@ -4272,7 +4245,7 @@ def render_admin_dashboard():
                             conn.commit()
                             show_success("Password changed successfully!")
                             st.session_state.auth['user_data']['password_hash'] = hash_password(new)
-                        except Error as e:
+                        except Exception as e:
                             show_error(f"Password Update Failed: {e}")
                         finally:
                             conn.close()
@@ -4302,9 +4275,6 @@ def render_admin_dashboard():
                 }
                 
                 # Create zip file
-                import zipfile
-                from io import BytesIO
-                
                 zip_buffer = BytesIO()
                 with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
                     for name, df in backup_data.items():
@@ -4319,6 +4289,7 @@ def render_admin_dashboard():
                     mime="application/zip",
                     use_container_width=True
                 )
+
 def render_auth_screen():
     # Create columns for the split screen layout
     col1, col2 = st.columns(2)
@@ -4761,10 +4732,8 @@ def render_auth_screen():
         
         st.markdown("</div>", unsafe_allow_html=True)
 
-
 def main():
     st.set_page_config(layout="wide")
-    
     
     set_custom_style()
     # Initialize database and session
