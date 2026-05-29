@@ -752,24 +752,38 @@ def get_students():
     conn = connect_db()
     if not conn:
         return []
-    
+
     try:
         cursor = conn.cursor()
+
         cursor.execute("""
-            SELECT cnic, full_name, age, degree, fee, 
-                   father_name,student_id, created_at,id
+            SELECT 
+                id,
+                cnic,
+                full_name,
+                age,
+                degree,
+                fee,
+                father_name,
+                student_id,
+                created_at
             FROM students
-            ORDER BY created_at DESC
+            ORDER BY id DESC
         """)
-        
+
         columns = [column[0] for column in cursor.description]
-        results = []
-        for row in cursor.fetchall():
-            results.append(dict(zip(columns, row)))
+
+        results = [
+            dict(zip(columns, row))
+            for row in cursor.fetchall()
+        ]
+
         return results
+
     except Exception as e:
-        st.error(f"🔴 Failed to Fetch Students: {e}")
+        st.error(f"Failed to Fetch Students: {e}")
         return []
+
     finally:
         conn.close()
 def validate_cnic(cnic):
