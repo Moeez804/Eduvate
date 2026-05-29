@@ -567,26 +567,31 @@ def get_teachers():
     conn = connect_db()
     if not conn:
         return []
-    
+
     try:
         cursor = conn.cursor()
+
         cursor.execute("""
             SELECT teacher_id, full_name, email, created_at
             FROM teachers
-            ORDER BY created_at DESC
+            ORDER BY id DESC
         """)
-        
+
         columns = [column[0] for column in cursor.description]
-        results = []
-        for row in cursor.fetchall():
-            results.append(dict(zip(columns, row)))
+
+        results = [
+            dict(zip(columns, row))
+            for row in cursor.fetchall()
+        ]
+
         return results
+
     except Exception as e:
-        st.error(f"🔴 Failed to Fetch Teachers: {e}")
+        st.error(f"Failed to Fetch Teachers: {e}")
         return []
+
     finally:
-        conn.close()
-def update_teacher(teacher_id, name=None, email=None):
+        conn.close()def update_teacher(teacher_id, name=None, email=None):
     conn = connect_db()
     if not conn:
         return False
