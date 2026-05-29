@@ -1,5 +1,5 @@
 import streamlit as st
-import pyodbc
+import sqlite3
 import hashlib
 import random
 import string
@@ -118,229 +118,204 @@ def set_custom_style():
 # ===== DATABASE FUNCTIONS =====
 def connect_db():
     try:
-        # Replace with your actual server and database names
-        server = 'DESKTOP-O93TIKV\\SQLEXPRESS'
-        database = 'lms'
-
-        conn = pyodbc.connect(
-            f'DRIVER={{ODBC Driver 17 for SQL Server}};'
-            f'SERVER={server};'
-            f'DATABASE={database};'
-            'Trusted_Connection=yes;'
-        )
+        conn = sqlite3.connect("lms.db")
         return conn
     except Exception as e:
         st.error(f"Database connection failed: {e}")
         return None
-
 def init_db():
     conn = connect_db()
     if not conn:
         return False
-    
+
     try:
         cursor = conn.cursor()
-        
-        # Create tables with SQL Server syntax
+
+        # ADMIN TABLE
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='admins' AND xtype='U')
-            CREATE TABLE admins (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                username VARCHAR(255) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
         """)
-        
+
+        # TEACHERS
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='teachers' AND xtype='U')
-            CREATE TABLE teachers (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                teacher_id VARCHAR(20) UNIQUE NOT NULL,
-                full_name VARCHAR(255) NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                must_change_pass BIT DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
+        CREATE TABLE IF NOT EXISTS teachers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id TEXT UNIQUE NOT NULL,
+            full_name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            must_change_pass INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
         """)
-        
+
+        # STUDENTS
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='students' AND xtype='U')
-            CREATE TABLE students (
-    id INT IDENTITY(1,1) PRIMARY KEY,
-    cnic VARCHAR(15) UNIQUE NOT NULL,
-    full_name VARCHAR(255) NOT NULL,
-    age INT NOT NULL,
-    degree VARCHAR(100) NOT NULL,
-    fee DECIMAL(10,2) NOT NULL,
-    father_name VARCHAR(255) NOT NULL,
-    profile_pic VARBINARY(MAX),
-    student_id VARCHAR(20) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    must_change_pass BIT DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cnic TEXT UNIQUE NOT NULL,
+            full_name TEXT NOT NULL,
+            age INTEGER NOT NULL,
+            degree TEXT NOT NULL,
+            fee REAL NOT NULL,
+            father_name TEXT NOT NULL,
+            profile_pic BLOB,
+            student_id TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            must_change_pass INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
         """)
-        
+
+        # CLASSES
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='classes' AND xtype='U')
-            CREATE TABLE classes (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                course_code VARCHAR(20) NOT NULL,
-                course_name VARCHAR(255) NOT NULL,
-                schedule VARCHAR(100) NOT NULL,
-                instructor_id VARCHAR(20) NOT NULL,
-                degree_program VARCHAR(100) NOT NULL,
-                FOREIGN KEY (instructor_id) REFERENCES teachers(teacher_id)
-            )
+        CREATE TABLE IF NOT EXISTS classes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            course_code TEXT NOT NULL,
+            course_name TEXT NOT NULL,
+            schedule TEXT NOT NULL,
+            instructor_id TEXT NOT NULL,
+            degree_program TEXT NOT NULL
+        )
         """)
-        
+
+        # ATTENDANCE
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='attendance' AND xtype='U')
-            CREATE TABLE attendance (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                student_cnic VARCHAR(15) NOT NULL,
-                class_id INT NOT NULL,
-                date DATE NOT NULL,
-                status VARCHAR(10) NOT NULL CHECK (status IN ('Present','Absent')),
-                FOREIGN KEY (student_cnic) REFERENCES students(cnic),
-                FOREIGN KEY (class_id) REFERENCES classes(id),
-                UNIQUE (student_cnic, class_id, date)
-            )
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_cnic TEXT NOT NULL,
+            class_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            status TEXT CHECK(status IN ('Present','Absent')),
+            UNIQUE(student_cnic, class_id, date)
+        )
         """)
-        
+
+        # GRADES
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='grades' AND xtype='U')
-            CREATE TABLE grades (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                student_cnic VARCHAR(15) NOT NULL,
-                class_id INT NOT NULL,
-                grade_point DECIMAL(3,2) NOT NULL,
-                remarks TEXT,
-                assigned_by VARCHAR(20) NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                semester VARCHAR(20) NOT NULL DEFAULT 'Fall 2023',
-                FOREIGN KEY (student_cnic) REFERENCES students(cnic),
-                FOREIGN KEY (class_id) REFERENCES classes(id),
-                FOREIGN KEY (assigned_by) REFERENCES teachers(teacher_id)
-            )
+        CREATE TABLE IF NOT EXISTS grades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_cnic TEXT NOT NULL,
+            class_id INTEGER NOT NULL,
+            grade_point REAL NOT NULL,
+            remarks TEXT,
+            assigned_by TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            semester TEXT DEFAULT 'Fall 2023'
+        )
         """)
-        
+
+        # INVOICES
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='invoices' AND xtype='U')
-            CREATE TABLE invoices (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                student_cnic VARCHAR(15) NOT NULL,
-                amount DECIMAL(10,2) NOT NULL,
-                issue_date DATE NOT NULL,
-                due_date DATE NOT NULL,
-                status VARCHAR(10) DEFAULT 'Unpaid' CHECK (status IN ('Paid','Unpaid')),
-                FOREIGN KEY (student_cnic) REFERENCES students(cnic)
-            )
+        CREATE TABLE IF NOT EXISTS invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_cnic TEXT NOT NULL,
+            amount REAL NOT NULL,
+            issue_date TEXT NOT NULL,
+            due_date TEXT NOT NULL,
+            status TEXT DEFAULT 'Unpaid'
+        )
         """)
-        
+
+        # ASSIGNMENTS
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='assignments' AND xtype='U')
-            CREATE TABLE assignments (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                class_id INT NOT NULL,
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                total_marks DECIMAL(5,2) NOT NULL,
-                due_date DATETIME NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (class_id) REFERENCES classes(id)
-            )
+        CREATE TABLE IF NOT EXISTS assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            total_marks REAL NOT NULL,
+            due_date TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
         """)
-        
+
+        # ASSIGNMENT GRADES
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='assignment_grades' AND xtype='U')
-            CREATE TABLE assignment_grades (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                assignment_id INT NOT NULL,
-                student_cnic VARCHAR(15) NOT NULL,
-                obtained_marks DECIMAL(5,2) NOT NULL,
-                feedback TEXT,
-                submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                graded_by VARCHAR(20) NOT NULL,
-                FOREIGN KEY (assignment_id) REFERENCES assignments(id),
-                FOREIGN KEY (student_cnic) REFERENCES students(cnic),
-                FOREIGN KEY (graded_by) REFERENCES teachers(teacher_id)
-            )
+        CREATE TABLE IF NOT EXISTS assignment_grades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assignment_id INTEGER NOT NULL,
+            student_cnic TEXT NOT NULL,
+            obtained_marks REAL NOT NULL,
+            feedback TEXT,
+            submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            graded_by TEXT NOT NULL
+        )
         """)
-        
+
+        # EXAMS
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='exams' AND xtype='U')
-            CREATE TABLE exams (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                class_id INT NOT NULL,
-                exam_type VARCHAR(20) NOT NULL CHECK (exam_type IN ('Quiz','Midterm','Final')),
-                title VARCHAR(255) NOT NULL,
-                total_marks DECIMAL(5,2) NOT NULL,
-                exam_date DATE NOT NULL,
-                weightage DECIMAL(5,2) NOT NULL,
-                FOREIGN KEY (class_id) REFERENCES classes(id)
-            )
+        CREATE TABLE IF NOT EXISTS exams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_id INTEGER NOT NULL,
+            exam_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            total_marks REAL NOT NULL,
+            exam_date TEXT NOT NULL,
+            weightage REAL NOT NULL
+        )
         """)
-        
+
+        # EXAM GRADES
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='exam_grades' AND xtype='U')
-            CREATE TABLE exam_grades (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                exam_id INT NOT NULL,
-                student_cnic VARCHAR(15) NOT NULL,
-                obtained_marks DECIMAL(5,2) NOT NULL,
-                graded_by VARCHAR(20) NOT NULL,
-                FOREIGN KEY (exam_id) REFERENCES exams(id),
-                FOREIGN KEY (student_cnic) REFERENCES students(cnic),
-                FOREIGN KEY (graded_by) REFERENCES teachers(teacher_id)
-            )
+        CREATE TABLE IF NOT EXISTS exam_grades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exam_id INTEGER NOT NULL,
+            student_cnic TEXT NOT NULL,
+            obtained_marks REAL NOT NULL,
+            graded_by TEXT NOT NULL
+        )
         """)
-        
+
+        # PAYMENTS
         cursor.execute("""
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='payments' AND xtype='U')
-            CREATE TABLE payments (
-                id INT IDENTITY(1,1) PRIMARY KEY,
-                invoice_id INT NOT NULL,
-                amount DECIMAL(10,2) NOT NULL,
-                payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-                payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('Cash','Card','Bank Transfer')),
-                transaction_id VARCHAR(50),
-                received_by VARCHAR(255),
-                FOREIGN KEY (invoice_id) REFERENCES invoices(id)
-            )
+        CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            payment_date TEXT DEFAULT CURRENT_TIMESTAMP,
+            payment_method TEXT,
+            transaction_id TEXT,
+            received_by TEXT
+        )
         """)
-        # Add this to the init_db() function after the other table creations
+
+        # SUBMISSIONS
         cursor.execute("""
-         IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='assignment_submissions' AND xtype='U')
-        CREATE TABLE assignment_submissions (
-        id INT IDENTITY(1,1) PRIMARY KEY,
-        assignment_id INT NOT NULL,
-        student_cnic VARCHAR(15) NOT NULL,
-        submission_file VARBINARY(MAX) NOT NULL,
-        file_name VARCHAR(255) NOT NULL,
-        file_type VARCHAR(50) NOT NULL,
-        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (assignment_id) REFERENCES assignments(id),
-        FOREIGN KEY (student_cnic) REFERENCES students(cnic)
-    )
-""")      
-        # Insert preset admin if not exists
+        CREATE TABLE IF NOT EXISTS assignment_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assignment_id INTEGER NOT NULL,
+            student_cnic TEXT NOT NULL,
+            submission_file BLOB NOT NULL,
+            file_name TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            submitted_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        # ADMIN INSERT
         cursor.execute("""
-            IF NOT EXISTS (SELECT 1 FROM admins WHERE username = ?)
-            INSERT INTO admins (username, password_hash)
-            VALUES (?, ?)
-        """, (PRESET_ADMIN["username"], PRESET_ADMIN["username"], hash_password(PRESET_ADMIN["password"])))
-        
+        INSERT OR IGNORE INTO admins (username, password_hash)
+        VALUES (?, ?)
+        """, (
+            PRESET_ADMIN["username"],
+            hash_password(PRESET_ADMIN["password"])
+        ))
+
         conn.commit()
         return True
+
     except Exception as e:
-        st.error(f"🔴 Database Initialization Failed: {e}")
+        st.error(f"Database Initialization Failed: {e}")
         return False
+
     finally:
         conn.close()
-
 # ===== UTILITY FUNCTIONS =====
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
