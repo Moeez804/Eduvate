@@ -1,4 +1,8 @@
 streamlit
-pyodbc
-fpdf
 pandas
+numpy
+matplotlib
+plotly
+fpdf
+pillow
+pyodbc
